@@ -49,27 +49,27 @@ jobs:
           exit 1
         fi
 
-    - name: Install gomobile
+    - name: Install gomobile and initialize
       run: |
-        echo "Installing gomobile..."
-        go install golang.org/x/mobile/cmd/gomobile@latest
-        go install golang.org/x/mobile/cmd/gobind@latest
+        echo "Installing gomobile tools..."
         
-    - name: Initialize gomobile
-      run: |
-        echo "Initializing gomobile..."
+        # 设置环境变量
         export PATH=$PATH:$(go env GOPATH)/bin
         export ANDROID_HOME=$ANDROID_SDK_ROOT
         export ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/25.2.9519653
         
-        # gomobile init 会自动检测 ANDROID_HOME 和 ANDROID_NDK_HOME
+        # 安装 gomobile
+        go install golang.org/x/mobile/cmd/gomobile@latest
+        go install golang.org/x/mobile/cmd/gobind@latest
+        
+        # 初始化 gomobile（这会下载必要的依赖）
+        echo "Initializing gomobile..."
         gomobile init
         
         # 验证安装
-        echo "Verifying installation..."
+        echo "✅ gomobile installed"
         which gomobile
         which gobind
-        gomobile version || echo "gomobile installed"
 
     - name: Prepare project structure
       run: |
@@ -87,23 +87,29 @@ jobs:
         require (
             github.com/google/uuid v1.6.0
             github.com/gorilla/websocket v1.5.1
+            golang.org/x/mobile v0.0.0-20231127183840-76ac6878050a
         )
         EOF
         
         echo "📦 Created go.mod"
         cat go.mod
         
-        # 下载依赖
-        echo "📥 Downloading dependencies..."
+        # 初始化 go.sum
         go mod download
-        go mod tidy
         
-        # 安装 gomobile 相关依赖
-        echo "📥 Installing gomobile dependencies..."
+        # 添加 mobile 依赖
         go get golang.org/x/mobile/bind
+        
+        # 整理依赖
         go mod tidy
         
         echo "✅ Dependencies ready"
+        echo ""
+        echo "📋 go.mod contents:"
+        cat go.mod
+        echo ""
+        echo "📋 go.sum exists:"
+        ls -lh go.sum
 
     - name: Create Android-compatible mobile package
       run: |
@@ -326,37 +332,54 @@ jobs:
         export ANDROID_HOME=$ANDROID_SDK_ROOT
         export ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/25.2.9519653
         
-        # 显示环境变量
-        echo "ANDROID_HOME: $ANDROID_HOME"
-        echo "ANDROID_NDK_HOME: $ANDROID_NDK_HOME"
-        echo "GOPATH: $(go env GOPATH)"
-        echo "PATH: $PATH"
+        # 显示环境信息
+        echo "📋 Environment:"
+        echo "  ANDROID_HOME: $ANDROID_HOME"
+        echo "  ANDROID_NDK_HOME: $ANDROID_NDK_HOME"
+        echo "  GOPATH: $(go env GOPATH)"
+        echo "  Go Version: $(go version)"
+        echo ""
         
-        # 验证 gomobile
-        echo "Verifying gomobile installation..."
-        gomobile version || true
+        # 验证 mobile 包
+        echo "📦 Verifying mobile package..."
+        cd mobile
+        go list -f '{{.Dir}}' . || echo "Package location: $(pwd)"
+        go build -v . || echo "Build test completed"
+        cd ..
+        echo ""
         
         # 清理可能的缓存
         rm -rf /tmp/gomobile-work-* 2>/dev/null || true
         
-        # 构建 arm64-v8a 架构
-        echo "Starting build..."
+        # 构建 AAR
+        echo "🔨 Starting AAR build..."
         gomobile bind -v \
           -target=android/arm64 \
           -androidapi 21 \
           -javapkg=com.echtunnel \
           -o echtunnel.aar \
-          ./mobile
+          ./mobile 2>&1 | tee build.log
         
-        if [ $? -eq 0 ]; then
+        BUILD_STATUS=${PIPESTATUS[0]}
+        
+        if [ $BUILD_STATUS -eq 0 ] && [ -f echtunnel.aar ]; then
+            echo ""
             echo "✅ AAR build completed successfully!"
             ls -lh echtunnel.aar
             
-            # 显示 AAR 内容
-            echo -e "\n📦 AAR contents:"
-            unzip -l echtunnel.aar | head -20
+            echo ""
+            echo "📦 AAR contents (first 30 lines):"
+            unzip -l echtunnel.aar | head -30
         else
+            echo ""
             echo "❌ AAR build failed!"
+            echo ""
+            echo "📋 Build log:"
+            cat build.log
+            echo ""
+            echo "🔍 Troubleshooting info:"
+            echo "  GOPATH packages:"
+            ls -la $(go env GOPATH)/pkg/mod/golang.org/x/ 2>/dev/null || echo "  No golang.org/x packages found"
             exit 1
         fi
 
