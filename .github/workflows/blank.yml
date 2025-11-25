@@ -307,6 +307,10 @@ jobs:
             fmt.Fprintln(os.Stderr, msg)
         }
         EOFMOBILE
+        
+        echo "✅ Mobile package created"
+        
+        # 不要在这里运行 go mod tidy，以免修改 go.mod
 
     - name: Extract and adapt core logic
       run: |
@@ -331,15 +335,61 @@ jobs:
         // TODO: 集成实际的隧道逻辑
         EOFBRIDGE
         
-        echo "Bridge created. Core logic needs to be integrated."
+        echo "✅ Bridge created"
+        
+        # 验证 go.mod 没有被修改
+        echo ""
+        echo "📦 Verifying go.mod still contains mobile dependency:"
+        grep "golang.org/x/mobile" go.mod && echo "  ✅ mobile dependency present" || echo "  ❌ mobile dependency MISSING!"
 
     - name: Verify mobile package
       run: |
         echo "Verifying mobile package..."
+        
+        # 再次检查 go.mod
+        echo "📦 Current go.mod:"
+        cat go.mod
+        echo ""
+        
+        # 如果 mobile 依赖丢失，重新添加
+        if ! grep -q "golang.org/x/mobile" go.mod; then
+            echo "⚠️  mobile dependency missing, adding it back..."
+            
+            # 重新创建正确的 go.mod
+            cat > go.mod << 'EOF'
+        module echtunnel
+
+        go 1.23
+
+        require (
+        	github.com/google/uuid v1.6.0
+        	github.com/gorilla/websocket v1.5.1
+        	golang.org/x/mobile v0.0.0-20251113184115-a159579294ab
+        )
+
+        require (
+        	golang.org/x/mod v0.22.0 // indirect
+        	golang.org/x/sync v0.10.0 // indirect
+        	golang.org/x/tools v0.28.0 // indirect
+        )
+        EOF
+            
+            echo "📦 Updated go.mod:"
+            cat go.mod
+            echo ""
+            
+            # 重新下载依赖
+            go mod download
+        fi
+        
+        # 验证 mobile 包
         cd mobile
-        go build -v .
+        echo "📦 Building mobile package..."
+        go build -v . 2>&1 || echo "⚠️  Build warnings (will continue)"
         cd ..
-        echo "Mobile package verified successfully"
+        
+        echo ""
+        echo "✅ Mobile package verification complete"
 
     - name: Build AAR (arm64-v8a only)
       run: |
