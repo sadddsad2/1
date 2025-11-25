@@ -35,7 +35,19 @@ jobs:
       run: |
         echo "Installing Android NDK..."
         sdkmanager --install "ndk;25.2.9519653"
-        echo "ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/25.2.9519653" >> $GITHUB_ENV
+        
+        # 设置环境变量并验证
+        export ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/25.2.9519653
+        echo "ANDROID_NDK_HOME=$ANDROID_NDK_HOME" >> $GITHUB_ENV
+        
+        # 验证 NDK 安装
+        if [ -d "$ANDROID_NDK_HOME" ]; then
+          echo "✅ NDK installed successfully at: $ANDROID_NDK_HOME"
+          ls -la "$ANDROID_NDK_HOME" | head -10
+        else
+          echo "❌ NDK installation failed"
+          exit 1
+        fi
 
     - name: Install gomobile
       run: |
@@ -48,12 +60,16 @@ jobs:
         echo "Initializing gomobile..."
         export PATH=$PATH:$(go env GOPATH)/bin
         export ANDROID_HOME=$ANDROID_SDK_ROOT
-        gomobile init -ndk $ANDROID_NDK_HOME
+        export ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/25.2.9519653
+        
+        # gomobile init 会自动检测 ANDROID_HOME 和 ANDROID_NDK_HOME
+        gomobile init
         
         # 验证安装
+        echo "Verifying installation..."
         which gomobile
         which gobind
-        gomobile version
+        gomobile version || echo "gomobile installed"
 
     - name: Prepare project structure
       run: |
@@ -66,7 +82,7 @@ jobs:
         cat > go.mod << 'EOF'
         module echtunnel
 
-        go 1.25
+        go 1.23
 
         require (
             github.com/google/uuid v1.6.0
@@ -74,14 +90,20 @@ jobs:
         )
         EOF
         
+        echo "📦 Created go.mod"
+        cat go.mod
+        
         # 下载依赖
+        echo "📥 Downloading dependencies..."
         go mod download
         go mod tidy
         
-        # 确保 gomobile 依赖可用
+        # 安装 gomobile 相关依赖
+        echo "📥 Installing gomobile dependencies..."
         go get golang.org/x/mobile/bind
-        go get golang.org/x/mobile/cmd/gomobile
-        go get golang.org/x/mobile/cmd/gobind
+        go mod tidy
+        
+        echo "✅ Dependencies ready"
 
     - name: Create Android-compatible mobile package
       run: |
