@@ -47,11 +47,20 @@ jobs:
       run: |
         echo "Initializing gomobile..."
         export PATH=$PATH:$(go env GOPATH)/bin
-        gomobile init
+        export ANDROID_HOME=$ANDROID_SDK_ROOT
+        gomobile init -ndk $ANDROID_NDK_HOME
+        
+        # 验证安装
+        which gomobile
+        which gobind
+        gomobile version
 
     - name: Prepare project structure
       run: |
         echo "Preparing project structure..."
+        
+        # 确保使用正确的 Go 版本
+        go version
         
         # 创建 go.mod
         cat > go.mod << 'EOF'
@@ -65,8 +74,14 @@ jobs:
         )
         EOF
         
+        # 下载依赖
         go mod download
         go mod tidy
+        
+        # 确保 gomobile 依赖可用
+        go get golang.org/x/mobile/bind
+        go get golang.org/x/mobile/cmd/gomobile
+        go get golang.org/x/mobile/cmd/gobind
 
     - name: Create Android-compatible mobile package
       run: |
@@ -287,8 +302,23 @@ jobs:
         echo "Building AAR for Android arm64-v8a..."
         export PATH=$PATH:$(go env GOPATH)/bin
         export ANDROID_HOME=$ANDROID_SDK_ROOT
+        export ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/25.2.9519653
+        
+        # 显示环境变量
+        echo "ANDROID_HOME: $ANDROID_HOME"
+        echo "ANDROID_NDK_HOME: $ANDROID_NDK_HOME"
+        echo "GOPATH: $(go env GOPATH)"
+        echo "PATH: $PATH"
+        
+        # 验证 gomobile
+        echo "Verifying gomobile installation..."
+        gomobile version || true
+        
+        # 清理可能的缓存
+        rm -rf /tmp/gomobile-work-* 2>/dev/null || true
         
         # 构建 arm64-v8a 架构
+        echo "Starting build..."
         gomobile bind -v \
           -target=android/arm64 \
           -androidapi 21 \
@@ -296,12 +326,17 @@ jobs:
           -o echtunnel.aar \
           ./mobile
         
-        echo "AAR build completed!"
-        ls -lh echtunnel.aar
-        
-        # 显示 AAR 内容
-        echo -e "\nAAR contents:"
-        unzip -l echtunnel.aar | head -20
+        if [ $? -eq 0 ]; then
+            echo "✅ AAR build completed successfully!"
+            ls -lh echtunnel.aar
+            
+            # 显示 AAR 内容
+            echo -e "\n📦 AAR contents:"
+            unzip -l echtunnel.aar | head -20
+        else
+            echo "❌ AAR build failed!"
+            exit 1
+        fi
 
     - name: Create Android example code
       run: |
