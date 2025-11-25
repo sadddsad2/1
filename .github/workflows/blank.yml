@@ -98,7 +98,7 @@ jobs:
         cat > go.mod << 'EOF'
         module echtunnel
 
-        go 1.23
+        go 1.25
 
         require (
             github.com/google/uuid v1.6.0
@@ -359,7 +359,7 @@ jobs:
             cat > go.mod << 'EOF'
         module echtunnel
 
-        go 1.23
+        go 1.25
 
         require (
         	github.com/google/uuid v1.6.0
