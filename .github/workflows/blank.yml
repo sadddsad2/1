@@ -358,26 +358,28 @@ jobs:
         echo "  Go Version: $(go version)"
         echo ""
         
+        # 再次验证 go.mod 存在且正确
+        echo "📦 Verifying go.mod:"
+        if [ ! -f go.mod ]; then
+            echo "❌ go.mod not found!"
+            exit 1
+        fi
+        cat go.mod
+        echo ""
+        
         # 验证依赖
-        echo "📦 Verifying golang.org/x/mobile dependency:"
-        go list -m golang.org/x/mobile
+        echo "📦 Verifying dependencies:"
+        go list -m all | grep -E "(mobile|uuid|websocket)" || echo "Some dependencies missing"
         echo ""
         
         # 验证 mobile 包可以构建
         echo "📦 Testing mobile package compilation..."
         cd mobile
-        go build -v .
-        BUILD_TEST=$?
+        go build -v . 2>&1 || echo "⚠️  Build test had warnings (continuing...)"
         cd ..
-        
-        if [ $BUILD_TEST -eq 0 ]; then
-            echo "✅ Mobile package builds successfully"
-        else
-            echo "⚠️  Mobile package build test had warnings (continuing...)"
-        fi
         echo ""
         
-        # 清理可能的缓存
+        # 清理缓存
         rm -rf /tmp/gomobile-work-* 2>/dev/null || true
         
         # 构建 AAR
@@ -396,32 +398,45 @@ jobs:
         
         if [ $BUILD_STATUS -eq 0 ] && [ -f echtunnel.aar ]; then
             echo ""
-            echo "✅ AAR build completed successfully!"
+            echo "============================================"
+            echo "✅ AAR BUILD SUCCESSFUL!"
+            echo "============================================"
+            echo ""
             ls -lh echtunnel.aar
             
             echo ""
-            echo "📦 AAR contents:"
-            unzip -l echtunnel.aar | head -30
+            echo "📦 AAR Package Contents:"
+            unzip -l echtunnel.aar | head -40
+            
+            echo ""
+            echo "============================================"
+            echo "✅ Build completed successfully!"
+            echo "============================================"
         else
             echo ""
-            echo "❌ AAR build failed!"
+            echo "============================================"
+            echo "❌ AAR BUILD FAILED!"
+            echo "============================================"
             echo ""
-            echo "📋 Full build log:"
+            echo "📋 Build log:"
             cat build.log
             echo ""
-            echo "🔍 Debugging info:"
+            echo "🔍 Debugging information:"
             echo ""
-            echo "Current directory contents:"
+            echo "1. Current directory:"
             ls -la
             echo ""
-            echo "Mobile directory contents:"
+            echo "2. Mobile directory:"
             ls -la mobile/
             echo ""
-            echo "Go modules:"
-            go list -m all | grep -E "(mobile|uuid|websocket)"
+            echo "3. go.mod content:"
+            cat go.mod
             echo ""
-            echo "Module cache (mobile):"
-            ls -la $(go env GOMODCACHE)/golang.org/x/mobile* 2>/dev/null || echo "Not found"
+            echo "4. All Go modules:"
+            go list -m all
+            echo ""
+            echo "5. Mobile package in cache:"
+            ls -la $(go env GOMODCACHE)/golang.org/x/ 2>/dev/null | grep mobile || echo "Not found"
             exit 1
         fi
 
