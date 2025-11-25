@@ -98,7 +98,7 @@ jobs:
         cat > go.mod << 'EOF'
         module echtunnel
 
-        go 1.25
+        go 1.24
 
         require (
             github.com/google/uuid v1.6.0
@@ -359,7 +359,7 @@ jobs:
             cat > go.mod << 'EOF'
         module echtunnel
 
-        go 1.25
+        go 1.24
 
         require (
         	github.com/google/uuid v1.6.0
@@ -409,7 +409,7 @@ jobs:
         echo ""
         
         # 再次验证 go.mod 存在且正确
-        echo "📦 Verifying go.mod:"
+        echo "📦 Final go.mod check:"
         if [ ! -f go.mod ]; then
             echo "❌ go.mod not found!"
             exit 1
@@ -418,24 +418,38 @@ jobs:
         echo ""
         
         # 验证依赖
-        echo "📦 Verifying dependencies:"
-        go list -m all | grep -E "(mobile|uuid|websocket)" || echo "Some dependencies missing"
+        echo "📦 All dependencies:"
+        go list -m all
+        echo ""
+        
+        # 确认 mobile 依赖存在
+        if go list -m golang.org/x/mobile > /dev/null 2>&1; then
+            echo "✅ golang.org/x/mobile dependency confirmed"
+        else
+            echo "❌ golang.org/x/mobile dependency NOT FOUND!"
+            exit 1
+        fi
         echo ""
         
         # 验证 mobile 包可以构建
         echo "📦 Testing mobile package compilation..."
         cd mobile
-        go build -v . 2>&1 || echo "⚠️  Build test had warnings (continuing...)"
+        go build -v . 2>&1 || echo "⚠️  Build test completed with warnings"
         cd ..
         echo ""
         
         # 清理缓存
         rm -rf /tmp/gomobile-work-* 2>/dev/null || true
         
-        # 构建 AAR
-        echo "🔨 Building AAR..."
+        # 构建 AAR - 显示完整输出
+        echo "============================================"
+        echo "🔨 Starting AAR Build Process"
+        echo "============================================"
+        echo ""
         echo "Command: gomobile bind -v -target=android/arm64 -androidapi 21 -javapkg=com.echtunnel -o echtunnel.aar ./mobile"
         echo ""
+        echo "Build output:"
+        echo "----------------------------------------"
         
         gomobile bind -v \
           -target=android/arm64 \
@@ -446,13 +460,18 @@ jobs:
         
         BUILD_STATUS=${PIPESTATUS[0]}
         
+        echo "----------------------------------------"
+        echo ""
+        
         if [ $BUILD_STATUS -eq 0 ] && [ -f echtunnel.aar ]; then
-            echo ""
             echo "============================================"
             echo "✅ AAR BUILD SUCCESSFUL!"
             echo "============================================"
             echo ""
+            echo "📊 AAR File Info:"
             ls -lh echtunnel.aar
+            FILE_SIZE=$(stat -f%z echtunnel.aar 2>/dev/null || stat -c%s echtunnel.aar)
+            echo "Size: $FILE_SIZE bytes ($(echo "scale=2; $FILE_SIZE/1024/1024" | bc 2>/dev/null || echo "N/A") MB)"
             
             echo ""
             echo "📦 AAR Package Contents:"
@@ -463,20 +482,23 @@ jobs:
             echo "✅ Build completed successfully!"
             echo "============================================"
         else
-            echo ""
             echo "============================================"
             echo "❌ AAR BUILD FAILED!"
             echo "============================================"
             echo ""
-            echo "📋 Build log:"
+            echo "Exit code: $BUILD_STATUS"
+            echo ""
+            echo "📋 Complete build log:"
+            echo "----------------------------------------"
             cat build.log
+            echo "----------------------------------------"
             echo ""
-            echo "🔍 Debugging information:"
+            echo "🔍 Complete debugging information:"
             echo ""
-            echo "1. Current directory:"
+            echo "1. Working directory contents:"
             ls -la
             echo ""
-            echo "2. Mobile directory:"
+            echo "2. Mobile directory contents:"
             ls -la mobile/
             echo ""
             echo "3. go.mod content:"
@@ -487,6 +509,18 @@ jobs:
             echo ""
             echo "5. Mobile package in cache:"
             ls -la $(go env GOMODCACHE)/golang.org/x/ 2>/dev/null | grep mobile || echo "Not found"
+            echo ""
+            echo "6. gomobile binary info:"
+            which gomobile
+            file $(which gomobile)
+            echo ""
+            echo "7. gobind binary info:"
+            which gobind
+            file $(which gobind)
+            echo ""
+            echo "8. Last 50 lines of build log:"
+            tail -50 build.log
+            
             exit 1
         fi
 
