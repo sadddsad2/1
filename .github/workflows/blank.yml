@@ -58,11 +58,22 @@ jobs:
         export ANDROID_HOME=$ANDROID_SDK_ROOT
         export ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/25.2.9519653
         
-        # 安装 gomobile
+        # 先创建一个临时的工作目录来安装 gomobile
+        mkdir -p /tmp/gomobile-setup
+        cd /tmp/gomobile-setup
+        
+        # 初始化一个临时模块
+        go mod init temp
+        
+        # 安装 gomobile（这会自动下载依赖）
+        go get golang.org/x/mobile/cmd/gomobile
+        go get golang.org/x/mobile/cmd/gobind
         go install golang.org/x/mobile/cmd/gomobile@latest
         go install golang.org/x/mobile/cmd/gobind@latest
         
-        # 初始化 gomobile（这会下载必要的依赖）
+        cd -
+        
+        # 初始化 gomobile（这会下载必要的依赖到正确位置）
         echo "Initializing gomobile..."
         gomobile init
         
@@ -70,6 +81,7 @@ jobs:
         echo "✅ gomobile installed"
         which gomobile
         which gobind
+        gomobile env
 
     - name: Prepare project structure
       run: |
@@ -331,34 +343,53 @@ jobs:
         export PATH=$PATH:$(go env GOPATH)/bin
         export ANDROID_HOME=$ANDROID_SDK_ROOT
         export ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/25.2.9519653
+        export GO111MODULE=on
         
         # 显示环境信息
         echo "📋 Environment:"
         echo "  ANDROID_HOME: $ANDROID_HOME"
         echo "  ANDROID_NDK_HOME: $ANDROID_NDK_HOME"
         echo "  GOPATH: $(go env GOPATH)"
+        echo "  GOMODCACHE: $(go env GOMODCACHE)"
         echo "  Go Version: $(go version)"
         echo ""
         
-        # 验证 mobile 包
+        # 显示 gomobile 环境
+        echo "📋 Gomobile environment:"
+        gomobile env
+        echo ""
+        
+        # 验证 golang.org/x/mobile 是否已下载
+        echo "📦 Checking mobile packages:"
+        ls -la $(go env GOMODCACHE)/golang.org/x/mobile@* 2>/dev/null | head -10 || echo "Mobile packages not found in cache"
+        echo ""
+        
+        # 确保依赖在模块缓存中
+        echo "📥 Ensuring dependencies..."
+        go mod download golang.org/x/mobile
+        go list -m golang.org/x/mobile
+        echo ""
+        
+        # 验证 mobile 包可以构建
         echo "📦 Verifying mobile package..."
         cd mobile
-        go list -f '{{.Dir}}' . || echo "Package location: $(pwd)"
-        go build -v . || echo "Build test completed"
+        go build -v .
         cd ..
         echo ""
         
         # 清理可能的缓存
         rm -rf /tmp/gomobile-work-* 2>/dev/null || true
         
-        # 构建 AAR
-        echo "🔨 Starting AAR build..."
+        # 尝试使用 go module 模式构建
+        echo "🔨 Building AAR with go modules..."
+        
+        # 方法1: 使用完整的模块路径
         gomobile bind -v \
           -target=android/arm64 \
           -androidapi 21 \
           -javapkg=com.echtunnel \
           -o echtunnel.aar \
-          ./mobile 2>&1 | tee build.log
+          echtunnel/mobile 2>&1 | tee build.log
         
         BUILD_STATUS=${PIPESTATUS[0]}
         
@@ -368,19 +399,43 @@ jobs:
             ls -lh echtunnel.aar
             
             echo ""
-            echo "📦 AAR contents (first 30 lines):"
+            echo "📦 AAR contents:"
             unzip -l echtunnel.aar | head -30
         else
             echo ""
-            echo "❌ AAR build failed!"
+            echo "❌ Method 1 failed, trying alternative approach..."
             echo ""
-            echo "📋 Build log:"
-            cat build.log
-            echo ""
-            echo "🔍 Troubleshooting info:"
-            echo "  GOPATH packages:"
-            ls -la $(go env GOPATH)/pkg/mod/golang.org/x/ 2>/dev/null || echo "  No golang.org/x packages found"
-            exit 1
+            
+            # 方法2: 直接使用目录路径
+            gomobile bind -v \
+              -target=android/arm64 \
+              -androidapi 21 \
+              -javapkg=com.echtunnel \
+              -o echtunnel.aar \
+              ./mobile 2>&1 | tee build2.log
+            
+            BUILD_STATUS=${PIPESTATUS[0]}
+            
+            if [ $BUILD_STATUS -eq 0 ] && [ -f echtunnel.aar ]; then
+                echo ""
+                echo "✅ AAR build completed successfully (method 2)!"
+                ls -lh echtunnel.aar
+                
+                echo ""
+                echo "📦 AAR contents:"
+                unzip -l echtunnel.aar | head -30
+            else
+                echo ""
+                echo "❌ Both build methods failed!"
+                echo ""
+                echo "📋 Build logs:"
+                echo "=== Method 1 ==="
+                cat build.log
+                echo ""
+                echo "=== Method 2 ==="
+                cat build2.log
+                exit 1
+            fi
         fi
 
     - name: Create Android example code
